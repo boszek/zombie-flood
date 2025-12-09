@@ -318,6 +318,9 @@ void Simulation::render() {
       glTranslatef(x, y, 0.0f);
       glRotatef(angle, 0.0f, 0.0f, 1.0f);
 
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
       glBegin(GL_QUADS);
       glTexCoord2f(0, 0);
       glVertex2f(-size / 2, -size / 2);
@@ -328,6 +331,8 @@ void Simulation::render() {
       glTexCoord2f(0, 1);
       glVertex2f(-size / 2, size / 2);
       glEnd();
+
+      glDisable(GL_BLEND);
 
       glPopMatrix();
     }

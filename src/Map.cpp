@@ -164,14 +164,19 @@ Map::Vector2 Map::getFlowAt(int x, int y) const {
 
 void Map::render() {
   // Simple immediate mode rendering for now
-  glColor3f(0.3f, 0.3f, 0.3f); // Dark gray walls
-  glBegin(GL_POINTS);
+  glColor3f(0.5f, 0.5f, 0.5f); // Grey walls
+  glColor3f(0.5f, 0.5f, 0.5f); // Grey walls
+
+  glBegin(GL_QUADS);
   for (int y = 0; y < m_height; ++y) {
     for (int x = 0; x < m_width; ++x) {
       if (m_data[y * m_width + x] == 1) {
-        glVertex2f((float)x / m_width * 2.0f - 1.0f,
-                   -((float)y / m_height * 2.0f - 1.0f) // Flip Y
-        );
+        // Draw in World Coordinates (0..800, 0..600)
+        // 1 unit = 1 pixel (at zoom 1.0)
+        glVertex2f(x, y);
+        glVertex2f(x + 1, y);
+        glVertex2f(x + 1, y + 1);
+        glVertex2f(x, y + 1);
       }
     }
   }
