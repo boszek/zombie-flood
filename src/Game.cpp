@@ -4,7 +4,7 @@
 
 Game::Game()
     : m_isRunning(false), m_window(nullptr), m_glContext(nullptr),
-      m_map(nullptr), m_zoom(1.0f), m_offsetX(0.0f), m_offsetY(0.0f),
+      m_map(nullptr), m_zoom(2.0f), m_offsetX(0.0f), m_offsetY(0.0f),
       m_simulation(nullptr), m_paused(false), m_dragging(false),
       m_simSpeed(1.0f), m_zombieSize(1.0f) {
   // Initialize UI layout
@@ -191,13 +191,23 @@ void Game::handleEvents() {
         }
       }
       break;
-    case SDL_MOUSEWHEEL:
+    case SDL_MOUSEWHEEL: {
+      int mx, my;
+      SDL_GetMouseState(&mx, &my);
+      float oldZoom = m_zoom;
+
       if (event.wheel.y > 0) {
         m_zoom *= 1.1f;
       } else if (event.wheel.y < 0) {
         m_zoom /= 1.1f;
       }
+
+      // Zoom towards mouse cursor:
+      // NewOffset = OldOffset + MouseX / NewZoom - MouseX / OldZoom
+      m_offsetX = m_offsetX + (float)mx / m_zoom - (float)mx / oldZoom;
+      m_offsetY = m_offsetY + (float)my / m_zoom - (float)my / oldZoom;
       break;
+    }
     }
   }
 }
