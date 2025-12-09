@@ -138,10 +138,20 @@ void Game::handleEvents() {
             my >= m_speedBar.y && my <= m_speedBar.y + m_speedBar.h) {
           m_simSpeed =
               (float)(mx - m_speedBar.x) / m_speedBar.w * 5.0f; // Max 5x speed
+          char title[64];
+          snprintf(title, 64, "Zombie Flood - Speed: %.1f, Size: %.1f",
+                   m_simSpeed, m_zombieSize);
+          SDL_SetWindowTitle(m_window, title);
         } else if (mx >= m_sizeBar.x && mx <= m_sizeBar.x + m_sizeBar.w &&
                    my >= m_sizeBar.y && my <= m_sizeBar.y + m_sizeBar.h) {
           m_zombieSize = (float)(mx - m_sizeBar.x) / m_sizeBar.w * 3.0f +
                          0.5f; // Size 0.5 to 3.5
+          m_simulation->setZombieSize(m_zombieSize);
+
+          char title[64];
+          snprintf(title, 64, "Zombie Flood - Speed: %.1f, Size: %.1f",
+                   m_simSpeed, m_zombieSize);
+          SDL_SetWindowTitle(m_window, title);
         } else if (mx >= m_pauseButton.x &&
                    mx <= m_pauseButton.x + m_pauseButton.w &&
                    my >= m_pauseButton.y &&
@@ -185,9 +195,18 @@ void Game::handleEvents() {
         if (mx >= m_speedBar.x && mx <= m_speedBar.x + m_speedBar.w &&
             my >= m_speedBar.y && my <= m_speedBar.y + m_speedBar.h) {
           m_simSpeed = (float)(mx - m_speedBar.x) / m_speedBar.w * 5.0f;
+          char title[64];
+          snprintf(title, 64, "Zombie Flood - Speed: %.1f, Size: %.1f",
+                   m_simSpeed, m_zombieSize);
+          SDL_SetWindowTitle(m_window, title);
         } else if (mx >= m_sizeBar.x && mx <= m_sizeBar.x + m_sizeBar.w &&
                    my >= m_sizeBar.y && my <= m_sizeBar.y + m_sizeBar.h) {
           m_zombieSize = (float)(mx - m_sizeBar.x) / m_sizeBar.w * 3.0f + 0.5f;
+          m_simulation->setZombieSize(m_zombieSize);
+          char title[64];
+          snprintf(title, 64, "Zombie Flood - Speed: %.1f, Size: %.1f",
+                   m_simSpeed, m_zombieSize);
+          SDL_SetWindowTitle(m_window, title);
         }
       }
       break;

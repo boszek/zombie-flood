@@ -5,6 +5,7 @@
 struct Particle {
   float x, y;
   float vx, vy;
+  float ax, ay;
 };
 
 class Simulation {
@@ -28,4 +29,13 @@ private:
   int m_score;
   unsigned int m_textureID;
   float m_zombieSize;
+
+  // Spatial Grid
+  std::vector<std::vector<int>> m_grid;
+  int m_gridWidth;
+  int m_gridHeight;
+  int m_cellSize;
+
+  void updateGrid();
+  void getNeighbors(int pIndex, std::vector<int> &neighbors);
 };

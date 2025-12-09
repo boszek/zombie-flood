@@ -16,6 +16,12 @@ void Simulation::init(int particleCount) {
   int h = m_map->getHeight();
   const auto &data = m_map->getData();
 
+  // Grid Init
+  m_cellSize = 4; // Slightly larger than max zombie size (3.5)
+  m_gridWidth = (w + m_cellSize - 1) / m_cellSize;
+  m_gridHeight = (h + m_cellSize - 1) / m_cellSize;
+  m_grid.resize(m_gridWidth * m_gridHeight);
+
   for (int i = 0; i < particleCount; ++i) {
     // Find random valid position
     int lx, ly;
@@ -32,7 +38,40 @@ void Simulation::init(int particleCount) {
       p.y = ly + 0.5f;
       p.vx = 0;
       p.vy = 0;
+      p.ax = 0;
+      p.ay = 0;
       m_particles.push_back(p);
+    }
+  }
+}
+
+void Simulation::updateGrid() {
+  for (auto &cell : m_grid) {
+    cell.clear();
+  }
+  for (int i = 0; i < m_particles.size(); ++i) {
+    const auto &p = m_particles[i];
+    int gx = (int)p.x / m_cellSize;
+    int gy = (int)p.y / m_cellSize;
+    if (gx >= 0 && gx < m_gridWidth && gy >= 0 && gy < m_gridHeight) {
+      m_grid[gy * m_gridWidth + gx].push_back(i);
+    }
+  }
+}
+
+void Simulation::getNeighbors(int pIndex, std::vector<int> &neighbors) {
+  const auto &p = m_particles[pIndex];
+  int gx = (int)p.x / m_cellSize;
+  int gy = (int)p.y / m_cellSize;
+
+  for (int y = -1; y <= 1; ++y) {
+    for (int x = -1; x <= 1; ++x) {
+      int nx = gx + x;
+      int ny = gy + y;
+      if (nx >= 0 && nx < m_gridWidth && ny >= 0 && ny < m_gridHeight) {
+        const auto &cell = m_grid[ny * m_gridWidth + nx];
+        neighbors.insert(neighbors.end(), cell.begin(), cell.end());
+      }
     }
   }
 }
@@ -42,92 +81,170 @@ void Simulation::update(float dt) {
   int h = m_map->getHeight();
   int centerX = w / 2;
   int centerY = h / 2;
-  float radiusSq = 25.0f; // 5 units radius squared
+  float goalRadiusSq = 25.0f;
 
-  float speed = 10.0f; // Units per second
-  float randomness = 2.0f;
+  float maxSpeed = 10.0f;
+  float maxForce = 20.0f; // Steering force magnitude
+  float separationDist =
+      m_zombieSize * 1.2f; // Keep distance slightly larger than size
 
   // Continuous Spawning
-  if (m_particles.size() < 10000) { // Cap at 10000
-    // Spawn 10 per frame
-    for (int i = 0; i < 10; ++i) {
-      // Spawn at edges? Or random?
-      // "spawns at random positions on the edges of the map"
+  if (m_particles.size() < 10000) {
+    // ... (Spawning logic can remain same or be refactored, keeping it minimal
+    // for diff size) Re-implementing simplified spawning for this block
+    for (int i = 0; i < 5; ++i) { // 5 per frame
       int side = std::rand() % 4;
       int lx, ly;
+      // ... (Edge logic)
       if (side == 0) {
         lx = 0;
         ly = std::rand() % h;
-      } // Left
-      else if (side == 1) {
+      } else if (side == 1) {
         lx = w - 1;
         ly = std::rand() % h;
-      } // Right
-      else if (side == 2) {
+      } else if (side == 2) {
         lx = std::rand() % w;
         ly = 0;
-      } // Top
-      else {
+      } else {
         lx = std::rand() % w;
         ly = h - 1;
-      } // Bottom
+      }
 
       if (m_map->getData()[ly * w + lx] == 0) {
-        Particle p;
-        p.x = lx + 0.5f;
-        p.y = ly + 0.5f;
-        p.vx = 0;
-        p.vy = 0;
+        Particle p = {(float)lx + 0.5f, (float)ly + 0.5f, 0, 0, 0, 0};
         m_particles.push_back(p);
       }
     }
   }
 
-  for (auto it = m_particles.begin(); it != m_particles.end();) {
-    Particle &p = *it;
+  updateGrid();
+  std::vector<int> neighbors;
+  neighbors.reserve(50);
 
+  for (int i = 0; i < m_particles.size(); ++i) {
+    Particle &p = m_particles[i];
+
+    // Reset acceleration
+    p.ax = 0;
+    p.ay = 0;
+
+    // 1. Flow Field Following
     int ix = (int)p.x;
     int iy = (int)p.y;
-
-    // Get flow
     Map::Vector2 flow = m_map->getFlowAt(ix, iy);
 
-    // Simple movement: move towards flow
-    // Add some random jitter
-    float rx = ((float)std::rand() / RAND_MAX - 0.5f) * randomness;
-    float ry = ((float)std::rand() / RAND_MAX - 0.5f) * randomness;
+    // Desired velocity based on flow
+    float desiredX = flow.x * maxSpeed;
+    float desiredY = flow.y * maxSpeed;
 
-    float dx = (flow.x * speed + rx) * dt;
-    float dy = (flow.y * speed + ry) * dt;
+    // Steering = Desired - Velocity
+    float steerX = desiredX - p.vx;
+    float steerY = desiredY - p.vy;
 
-    // Update velocity for rotation (smooth it?)
-    // Simple assignment for now
-    if (dx != 0 || dy != 0) {
-      float len = std::sqrt(dx * dx + dy * dy);
-      p.vx = dx / len;
-      p.vy = dy / len;
+    // Limit steering force
+    float steerLen = std::sqrt(steerX * steerX + steerY * steerY);
+    if (steerLen > maxForce) {
+      steerX = (steerX / steerLen) * maxForce;
+      steerY = (steerY / steerLen) * maxForce;
     }
 
-    float nextX = p.x + dx;
-    float nextY = p.y + dy;
+    // Add randomness
+    float rx = ((float)std::rand() / RAND_MAX - 0.5f) * 10.0f;
+    float ry = ((float)std::rand() / RAND_MAX - 0.5f) * 10.0f;
 
-    // Collision Check
+    p.ax += steerX + rx;
+    p.ay += steerY + ry;
+
+    // 2. Separation
+    neighbors.clear();
+    getNeighbors(i, neighbors);
+
+    float sepX = 0;
+    float sepY = 0;
+    int sepCount = 0;
+
+    for (int nIdx : neighbors) {
+      if (nIdx == i)
+        continue;
+      const Particle &other = m_particles[nIdx];
+      float dx = p.x - other.x;
+      float dy = p.y - other.y;
+      float dSq = dx * dx + dy * dy;
+
+      // Use user-defined size for separation
+      float minSep = m_zombieSize;
+      if (dSq > 0 && dSq < minSep * minSep) {
+        float d = std::sqrt(dSq);
+        // Stronger repulsive force closer we are
+        float force = (minSep - d) / d; // Simple linear repulsion
+        sepX += dx * force; // Normalize by dividing by d is done implicitly by
+                            // dx/d * (minSep-d) ? No dx/d * mag.
+        // dx/d is normal. magnitude is (minSep - d). so dx/d * (minSep - d) =
+        // dx * (minSep/d - 1). Let's use simple weighting: vector/distSq
+        sepX += (dx / d) * (minSep - d) * 50.0f; // 50.0f separation weight
+        sepY += (dy / d) * (minSep - d) * 50.0f;
+        sepCount++;
+      }
+    }
+
+    p.ax += sepX;
+    p.ay += sepY;
+
+    // 3. Integration
+    p.vx += p.ax * dt;
+    p.vy += p.ay * dt;
+
+    // Limit speed
+    float speedSq = p.vx * p.vx + p.vy * p.vy;
+    if (speedSq > maxSpeed * maxSpeed) {
+      float speed = std::sqrt(speedSq);
+      p.vx = (p.vx / speed) * maxSpeed;
+      p.vy = (p.vy / speed) * maxSpeed;
+    }
+
+    float nextX = p.x + p.vx * dt;
+    float nextY = p.y + p.vy * dt;
+
+    // 4. Wall Collision (Simple slide)
     int nix = (int)nextX;
     int niy = (int)nextY;
-
     if (nix >= 0 && nix < w && niy >= 0 && niy < h) {
       if (m_map->getData()[niy * w + nix] == 0) {
         p.x = nextX;
         p.y = nextY;
       } else {
-        // Hit wall, maybe slide? Simple: don't move
+        // Hit wall, kill velocity perpendicular? Or just stop.
+        p.vx = 0;
+        p.vy = 0;
+        // Don't update pos
       }
+    } else {
+      // Map bounds
+      p.x = std::max(0.0f, std::min((float)w, nextX));
+      p.y = std::max(0.0f, std::min((float)h, nextY));
     }
 
-    // Check Goal
-    float distSq =
-        (p.x - centerX) * (p.x - centerX) + (p.y - centerY) * (p.y - centerY);
-    if (distSq < radiusSq) {
+    // 5. Goal Check
+    // Reuse iter erase logic?
+    // Doing erase in loop with index access is tricky.
+    // Better to mark for deletion or swap-remove.
+    // Let's stick to simple loop structure but be careful.
+    // Actually, "update" loop above is index based.
+    // Let's do a second pass for removal or handle it here with swap-back?
+    // Swap-back changes indices, breaking updateGrid/neighbors if done
+    // mid-frame. Actually, updateGrid is done once. If I swap-back, indices
+    // change. So if I process i, and swap last into i, I need to process i
+    // again. But grid refers to old indices! Safest: Use `erase` but iterate
+    // backwards? Or just mark dead. Or just simple erase and adjust `i` and
+    // rebuild grid next frame. Performance hit of erase is O(N), but we only
+    // erase a few per frame.
+  }
+
+  // Cleanup loop
+  for (auto it = m_particles.begin(); it != m_particles.end();) {
+    float distanceSq = (it->x - centerX) * (it->x - centerX) +
+                       (it->y - centerY) * (it->y - centerY);
+    if (distanceSq < goalRadiusSq) {
       m_score++;
       it = m_particles.erase(it);
     } else {
