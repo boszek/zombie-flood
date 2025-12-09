@@ -195,11 +195,16 @@ void Simulation::update(float dt) {
     p.vy += p.ay * dt;
 
     // Limit speed
+    float terrainMod = m_map->getSpeedModifier((int)p.x, (int)p.y);
+    float currentMaxSpeed = maxSpeed * terrainMod;
+
     float speedSq = p.vx * p.vx + p.vy * p.vy;
-    if (speedSq > maxSpeed * maxSpeed) {
+    if (speedSq > currentMaxSpeed * currentMaxSpeed) {
       float speed = std::sqrt(speedSq);
-      p.vx = (p.vx / speed) * maxSpeed;
-      p.vy = (p.vy / speed) * maxSpeed;
+      if (speed > 0) {
+        p.vx = (p.vx / speed) * currentMaxSpeed;
+        p.vy = (p.vy / speed) * currentMaxSpeed;
+      }
     }
 
     float nextX = p.x + p.vx * dt;

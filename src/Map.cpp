@@ -1,4 +1,5 @@
 #include "Map.hpp"
+#include <SDL_image.h>
 #include <SDL_opengl.h> // Include OpenGL header
 #include <cmath>
 #include <cstdlib>
@@ -13,6 +14,125 @@ Map::Map(int width, int height) : m_width(width), m_height(height) {
 }
 
 Map::~Map() {}
+
+bool Map::load(const char *bgFile, const char *maskFile) {
+  // Load Background Texture
+  SDL_Surface *bgSurf = IMG_Load(bgFile);
+  if (!bgSurf) {
+    printf("Failed to load map background: %s\n", IMG_GetError());
+    return false;
+  }
+
+  // Set map dimensions from background image
+  m_width = bgSurf->w;
+  m_height = bgSurf->h;
+
+  glGenTextures(1, &m_textureID);
+  glBindTexture(GL_TEXTURE_2D, m_textureID);
+
+  // Choose format based on bytes per pixel
+  int mode = GL_RGB;
+  if (bgSurf->format->BytesPerPixel == 4)
+    mode = GL_RGBA;
+
+  glTexImage2D(GL_TEXTURE_2D, 0, mode, bgSurf->w, bgSurf->h, 0, mode,
+               GL_UNSIGNED_BYTE, bgSurf->pixels);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+  SDL_FreeSurface(bgSurf);
+
+  // Load Mask
+  SDL_Surface *maskSurf = IMG_Load(maskFile);
+  if (!maskSurf) {
+    printf("Failed to load map mask: %s\n", IMG_GetError());
+    return false;
+  }
+
+  // Resize data vectors
+  m_data.resize(m_width * m_height);
+  m_speedModifiers.resize(m_width * m_height);
+  m_flowField.resize(m_width * m_height);
+
+  // Parse Mask Pixels
+  // Ensure we are reading correctly regardless of format.
+  // For simplicity, let's assume 32-bit or 24-bit.
+  // Better: use getPixel helper.
+
+  SDL_LockSurface(maskSurf);
+
+  auto getPixel = [&](int x, int y) -> Uint32 {
+    int bpp = maskSurf->format->BytesPerPixel;
+    Uint8 *p = (Uint8 *)maskSurf->pixels + y * maskSurf->pitch + x * bpp;
+    switch (bpp) {
+    case 1:
+      return *p;
+    case 2:
+      return *(Uint16 *)p;
+    case 3:
+      if (SDL_BYTEORDER == SDL_BIG_ENDIAN)
+        return p[0] << 16 | p[1] << 8 | p[2];
+      else
+        return p[0] | p[1] << 8 | p[2] << 16;
+    case 4:
+      return *(Uint32 *)p;
+    default:
+      return 0;
+    }
+  };
+
+  for (int y = 0; y < m_height; ++y) {
+    for (int x = 0; x < m_width; ++x) {
+      // Map image size might differ from mask? Assume same or clamp.
+      // If mask is smaller/larger, we should probably scale logic, but let's
+      // assume user provided matching assets or we clamp to map size.
+      if (x >= maskSurf->w || y >= maskSurf->h) {
+        m_data[y * m_width + x] = 1; // Out of bounds -> Wall
+        m_speedModifiers[y * m_width + x] = 0.0f;
+        continue;
+      }
+
+      Uint32 pixel = getPixel(x, y);
+      Uint8 r, g, b;
+      SDL_GetRGB(pixel, maskSurf->format, &r, &g, &b);
+
+      int idx = y * m_width + x;
+
+      if (r == 0 && g == 0 && b == 0) {
+        // Black = Wall
+        m_data[idx] = 1;
+        m_speedModifiers[idx] = 0.0f;
+      } else if (b > 200 && r < 50 && g < 50) {
+        // Blue = Road / Fast
+        m_data[idx] = 0;
+        m_speedModifiers[idx] = 1.0f;
+      } else if (r > 200 && g < 50 && b < 50) {
+        // Red = Slow
+        m_data[idx] = 0;
+        m_speedModifiers[idx] = 0.5f;
+      } else {
+        // Other (e.g. white/noise) -> Default Walkable
+        m_data[idx] = 0;
+        m_speedModifiers[idx] = 1.0f;
+      }
+    }
+  }
+
+  SDL_UnlockSurface(maskSurf);
+  SDL_FreeSurface(maskSurf);
+
+  // Recalculate AI
+  calculateFlowField();
+
+  return true;
+}
+
+float Map::getSpeedModifier(int x, int y) const {
+  if (x >= 0 && x < m_width && y >= 0 && y < m_height) {
+    return m_speedModifiers[y * m_width + x];
+  }
+  return 0.0f;
+}
 
 void Map::generate() {
   // Simple cellular automata or random noise for "apocalyptic city"
@@ -73,9 +193,8 @@ void Map::generate() {
         m_data[y * m_width + x] = 0;
       }
     }
-
-    calculateFlowField();
   }
+  calculateFlowField();
 }
 
 void Map::calculateFlowField() {
@@ -163,24 +282,39 @@ Map::Vector2 Map::getFlowAt(int x, int y) const {
 }
 
 void Map::render() {
-  // Simple immediate mode rendering for now
-  glColor3f(0.5f, 0.5f, 0.5f); // Grey walls
-  glColor3f(0.5f, 0.5f, 0.5f); // Grey walls
+  // Render Background Texture
+  glEnable(GL_TEXTURE_2D);
+  glBindTexture(GL_TEXTURE_2D, m_textureID);
+  glColor3f(1.0f, 1.0f, 1.0f); // White tint to show texture as-is
 
   glBegin(GL_QUADS);
-  for (int y = 0; y < m_height; ++y) {
-    for (int x = 0; x < m_width; ++x) {
-      if (m_data[y * m_width + x] == 1) {
-        // Draw in World Coordinates (0..800, 0..600)
-        // 1 unit = 1 pixel (at zoom 1.0)
-        glVertex2f(x, y);
-        glVertex2f(x + 1, y);
-        glVertex2f(x + 1, y + 1);
-        glVertex2f(x, y + 1);
+  glTexCoord2f(0.0f, 0.0f);
+  glVertex2f(0.0f, 0.0f);
+  glTexCoord2f(1.0f, 0.0f);
+  glVertex2f((float)m_width, 0.0f);
+  glTexCoord2f(1.0f, 1.0f);
+  glVertex2f((float)m_width, (float)m_height);
+  glTexCoord2f(0.0f, 1.0f);
+  glVertex2f(0.0f, (float)m_height);
+  glEnd();
+
+  glDisable(GL_TEXTURE_2D);
+
+  // Debug: Overlay obstacles slightly?
+  // Uncomment to see logic map over texture
+  /*
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glColor4f(1.0f, 0.0f, 0.0f, 0.3f); // Red overlay
+  glBegin(GL_POINTS);
+  for(int y=0; y<m_height; ++y) {
+      for(int x=0; x<m_width; ++x) {
+          if(m_data[y*m_width+x] == 1) glVertex2f(x, y);
       }
-    }
   }
   glEnd();
+  glDisable(GL_BLEND);
+  */
 
   // Draw Center Fortress
   glColor3f(1.0f, 0.0f, 0.0f); // Red
@@ -189,4 +323,28 @@ void Map::render() {
   glVertex2f(0.0f, 0.0f);
   glEnd();
   glPointSize(1.0f);
+}
+
+void Map::renderMask() {
+  glEnable(GL_TEXTURE_2D);
+  glBindTexture(GL_TEXTURE_2D, m_maskTextureID);
+
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  glColor4f(1.0f, 1.0f, 1.0f, 0.5f); // 50% opacity
+
+  glBegin(GL_QUADS);
+  glTexCoord2f(0.0f, 0.0f);
+  glVertex2f(0.0f, 0.0f);
+  glTexCoord2f(1.0f, 0.0f);
+  glVertex2f((float)m_width, 0.0f);
+  glTexCoord2f(1.0f, 1.0f);
+  glVertex2f((float)m_width, (float)m_height);
+  glTexCoord2f(0.0f, 1.0f);
+  glVertex2f(0.0f, (float)m_height);
+  glEnd();
+
+  glDisable(GL_BLEND);
+  glDisable(GL_TEXTURE_2D);
 }

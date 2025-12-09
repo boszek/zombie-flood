@@ -33,8 +33,9 @@ private:
 
   // UI state
   bool m_paused;
+  bool m_showMask;
   bool m_dragging;
-  int m_lastMouseX, m_lastMouseY;
+  int m_dragStartX, m_dragStartY;
 
   // Controls
   float m_simSpeed;
@@ -47,4 +48,5 @@ private:
   Rect m_speedBar;
   Rect m_sizeBar;
   Rect m_pauseButton;
+  Rect m_maskButton;
 };

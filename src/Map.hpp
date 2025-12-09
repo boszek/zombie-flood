@@ -8,6 +8,7 @@ public:
   ~Map();
 
   void generate();
+  bool load(const char *bgFile, const char *maskFile);
   void render(SDL_Renderer *renderer); // Using SDL_Renderer for simplicity
                                        // initially, or OpenGL?
   // GAME.md said OpenGL, so maybe we should stick to OpenGL rendering or use
@@ -32,16 +33,14 @@ public:
   // Actually, I'll define render() to take nothing for now, assuming it calls
   // GL functions.
   void render();
+  void renderMask();
 
   int getWidth() const { return m_width; }
   int getHeight() const { return m_height; }
 
   const std::vector<unsigned char> &getData() const { return m_data; }
+  float getSpeedModifier(int x, int y) const;
 
-  // Flow field: 0-7 direction, 255 = blocked/center?
-  // Actually, vector<pair<float, float>> might be better for smooth movement,
-  // or just pair<int, int> Let's store pairs of floats representing normalized
-  // direction vector.
   struct Vector2 {
     float x, y;
   };
@@ -52,7 +51,11 @@ private:
   int m_width;
   int m_height;
   std::vector<unsigned char> m_data; // 0 = empty, 1 = obstacle/wall
+  std::vector<float>
+      m_speedModifiers; // 1.0 = normal, 0.5 = slow, 0.0 = blocked
   std::vector<Vector2> m_flowField;
+  unsigned int m_textureID;
+  unsigned int m_maskTextureID;
 
   void calculateFlowField();
 };
